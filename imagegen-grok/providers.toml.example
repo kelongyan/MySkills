@@ -1,0 +1,93 @@
+# imagegen provider pool config — copy to a `providers.toml` OUTSIDE this skill
+# tree and fill it in. The skill package itself must never carry credentials.
+#
+# Where the real file goes (first match wins):
+#   1. `--providers PATH`
+#   2. the `IMAGEGEN_PROVIDERS` environment variable
+#   3. `IMAGEGEN_CONFIG_DIR` (an explicit per-environment directory)
+#   4. this environment's own directory — one config per agent environment:
+#        Windows: %APPDATA%\imagegen\<host>\providers.toml
+#        other:   $XDG_CONFIG_HOME/imagegen/<host>/providers.toml
+#      <host> is workbuddy / claude / opencode / ... inferred from where this
+#      skill copy is installed (e.g. <host>/.claude/skills/imagegen -> claude).
+#   5. the shared config directory (%APPDATA%\imagegen or ~/.config/imagegen),
+#      which a bare source checkout (no host tree) uses directly
+#
+# Loaded by scripts/image_gen.py (see provider_pool.py). When no config file is
+# found, the CLI falls back to the single-provider path driven by
+# `provider.env` / real environment variables, so this file is opt-in.
+#
+# Prefer `api_key_env` over a literal `api_key` when you can.
+#
+# One [[provider]] entry == one scheduling slot. Several entries sharing a
+# `base_url` are several keys on the same provider; different `base_url`
+# values mean different providers. Both mix freely in one pool.
+
+[pool]
+# Slot selection strategy:
+#   "weighted-round-robin" — smooth distribution by `weight` (default)
+#   "least-inflight"       — always prefer the slot with the fewest in-flight
+strategy = "weighted-round-robin"
+
+# How many times a single job may be attempted across the whole pool before
+# it is declared failed. Each retry prefers a *different* slot.
+max_attempts = 6
+
+# Cooldown after repeated failures: base * 2^(consecutive_failures - threshold),
+# capped at cooldown_max_seconds. Auth failures (401/403/quota) jump straight
+# to cooldown_max_seconds. Cooldowns reset as soon as a call succeeds.
+cooldown_base_seconds = 5
+cooldown_max_seconds = 300
+fail_threshold = 2
+
+# How long a job waits for a free slot (all busy / cooling) before giving up.
+acquire_timeout_seconds = 600
+
+[defaults]
+# Default model for every slot that does not set its own `model`.
+# Dedicated model for Grok Imagine:
+model = "grok-imagine-image-quality"
+# Default per-slot concurrency cap, overridable per provider.
+max_concurrency = 4
+
+# ---------------------------------------------------------------------------
+# Slots
+# ---------------------------------------------------------------------------
+
+# Primary Grok Imagine NewAPI channel slot
+[[provider]]
+name = "grok-primary"
+base_url = "https://freeapi.dgbmc.top/v1"
+api_key = "sk-REPLACE-ME"
+# Higher weight = more traffic. Use it for keys with bigger quotas or faster responses.
+weight = 3
+# Max requests this key may have in flight at once.
+max_concurrency = 4
+
+# Backup or multi-key slot on the same provider
+[[provider]]
+name = "grok-secondary"
+base_url_env = "OPENAI_BASE_URL"
+api_key_env = "IMAGEGEN_KEY_GROK_SECONDARY"
+weight = 2
+max_concurrency = 2
+enabled = false
+
+# A completely different provider.
+[[provider]]
+name = "official"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+weight = 1
+max_concurrency = 2
+# Flip to false to take a slot out of rotation without deleting the entry.
+enabled = false
+
+# A slot that needs a differently-named model can override it here.
+# [[provider]]
+# name = "other-endpoint"
+# base_url = "https://example.com/v1"
+# api_key_env = "IMAGEGEN_KEY_OTHER"
+# model = "gpt-image-2"
+# weight = 1
+# max_concurrency = 3

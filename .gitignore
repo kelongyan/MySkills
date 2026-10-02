@@ -1,0 +1,14 @@
+# 本地开发约定（见全局 AGENTS.md 的 RULE.md 规则）
+**/RULE.md
+
+# 生成物与临时文件
+output/
+tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# 宿主 agent 本地会话残留（memory / plans）
+.workbuddy/
+.zcode/
